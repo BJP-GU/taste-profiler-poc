@@ -1,0 +1,12 @@
+node_modules
+.next
+.env
+.env.local
+data/references.json
+data/profile.json
+data/web-references.json
+data/web-profile.json
+public/uploads/*
+!public/uploads/.gitkeep
+!public/uploads/web/
+!public/uploads/web/.gitkeep
