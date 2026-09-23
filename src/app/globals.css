@@ -1,1 +1,10 @@
 @import "tailwindcss";
+
+@keyframes playground-rise {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

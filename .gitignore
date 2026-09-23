@@ -6,6 +6,8 @@ data/references.json
 data/profile.json
 data/web-references.json
 data/web-profile.json
+data/web2-references.json
+data/web2-profile.json
 public/uploads/*
 !public/uploads/.gitkeep
 !public/uploads/web/

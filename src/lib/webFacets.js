@@ -30,3 +30,24 @@ export const WEB_FACETS = [
 ];
 
 export const WEB_FACET_KEYS = WEB_FACETS.map((f) => f.key);
+
+export function aggregateWebFacets(refs) {
+  const aggregated = {};
+  for (const key of WEB_FACET_KEYS) {
+    const scores = [];
+    const liked = [];
+    const disliked = [];
+
+    for (const ref of refs) {
+      const facet = ref.facets.find((f) => f.name === key);
+      if (!facet) continue;
+      scores.push(facet.score);
+      if (facet.score === 1 && facet.descriptor) liked.push(facet.descriptor);
+      if (facet.score === -1 && facet.descriptor) disliked.push(facet.descriptor);
+    }
+
+    const average = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+    aggregated[key] = { average: Number(average.toFixed(2)), liked, disliked };
+  }
+  return aggregated;
+}
