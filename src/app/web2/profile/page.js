@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { WEB_FACETS } from "@/lib/webFacets";
-import FacetScorePlot from "@/components/FacetScorePlot";
+import CalibrationBar from "@/components/CalibrationBar";
 
 export default function Web2ProfilePage() {
   const [data, setData] = useState(null);
@@ -17,79 +18,98 @@ export default function Web2ProfilePage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p className="text-sm text-neutral-500">Loading...</p>;
-  if (error) return <p className="text-red-600 text-sm">{error}</p>;
-
-  const howProfileWorks = (
-    <p className="text-sm text-neutral-500 mt-2 leading-relaxed">
-      <span className="font-medium text-neutral-700">
-        Semantic profile (how profile generation works):
-      </span>{" "}
-      Once you have enough references, the app aggregates per facet: average score plus the
-      descriptor phrases tied to your likes and dislikes. That structured bundle is sent to Claude
-      once (then cached) to write the plain-language taste summary.
-    </p>
-  );
-
-  if (data.insufficientData) {
-    return (
-      <div className="space-y-4">
-        <div>
-          <h1 className="text-xl font-semibold">Your web design taste profile</h1>
-          {howProfileWorks}
-        </div>
-        <p className="text-sm text-neutral-500">
-          Score at least {data.required} references before generating a taste profile. You
-          currently have {data.count}.
-        </p>
-      </div>
-    );
+  if (loading) {
+    return <p className="mono text-xs text-black/50">Loading profile…</p>;
   }
-
-  if (data.insufficientDescriptors) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-xl font-semibold">Your web design taste profile</h1>
-          {howProfileWorks}
-        </div>
-        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-          Every scored facet across your {data.count} references has an empty description, so
-          there&apos;s nothing concrete to summarize yet. Go back into the catalog and add a short
-          description to a few of your liked and disliked facets, then come back here.
-        </p>
-        {data.placements?.length > 0 && (
-          <FacetScorePlot
-            facets={WEB_FACETS}
-            placements={data.placements}
-            catalogBase="/web2/catalog"
-          />
-        )}
-      </div>
-    );
-  }
+  if (error) return <p className="text-sm">{error}</p>;
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-semibold">Your web design taste profile</h1>
-        <p className="text-sm text-neutral-500 mt-1">
-          Based on {data.count} scored references
-          {data.cached ? " · saved profile" : ""}.
+        <p className="mono text-xs tracking-wide uppercase text-black/50 mb-2">
+          Semantic taste profile
         </p>
-        {howProfileWorks}
+        <h1 className="text-2xl font-medium tracking-tight">Your taste</h1>
+        <p className="text-sm text-black/60 mt-2 max-w-xl leading-relaxed">
+          Liked and disliked sites form a support set. Facet descriptors are contrasted
+          (juxtaposition), then synthesized into prefers / avoids language an AI design
+          tool can follow.
+        </p>
+        {data.paper && (
+          <p className="mono text-xs text-black/40 mt-2">{data.paper}</p>
+        )}
       </div>
 
-      <div className="border border-neutral-200 rounded p-4 bg-white leading-relaxed text-sm whitespace-pre-line">
-        {data.profileText}
-      </div>
+      {data.calibration && <CalibrationBar calibration={data.calibration} />}
 
-      {data.placements?.length > 0 && (
-        <FacetScorePlot
-          facets={WEB_FACETS}
-          placements={data.placements}
-          catalogBase="/web2/catalog"
-        />
+      {data.insufficientData && (
+        <p className="text-sm text-black/70 border border-black/20 p-4">
+          Score at least{" "}
+          <span className="mono">
+            {data.requiredLiked} liked + {data.requiredDisliked} disliked
+          </span>{" "}
+          websites before generating a profile. You have{" "}
+          <span className="mono">
+            {data.calibration?.likedCount ?? 0} liked ·{" "}
+            {data.calibration?.dislikedCount ?? 0} disliked
+          </span>
+          .{" "}
+          <Link href="/web2" className="underline underline-offset-2">
+            Add a site
+          </Link>
+          .
+        </p>
+      )}
+
+      {data.insufficientDescriptors && (
+        <p className="text-sm border border-black p-4">
+          Facet descriptions are empty across your support set, so there is nothing
+          concrete to summarize. Edit descriptors in the catalog, then return here.
+        </p>
+      )}
+
+      {!data.insufficientData && !data.insufficientDescriptors && (
+        <>
+          <div className="border border-black p-5 bg-white leading-relaxed text-sm whitespace-pre-line">
+            {data.profileText}
+          </div>
+          {data.cached && (
+            <p className="mono text-xs text-black/40">Cached · unchanged support set</p>
+          )}
+
+          <div className="space-y-3">
+            <h2 className="mono text-xs uppercase tracking-wide text-black/50">
+              Facet profile
+            </h2>
+            <div className="divide-y divide-black/15 border border-black/15">
+              {WEB_FACETS.map((f) => {
+                const sem = data.semanticFacets?.[f.key];
+                if (!sem) return null;
+                return (
+                  <div key={f.key} className="p-4 grid sm:grid-cols-[10rem_1fr] gap-3">
+                    <div>
+                      <div className="text-sm font-medium">{f.label}</div>
+                    </div>
+                    <div className="text-sm space-y-1">
+                      <p>
+                        <span className="mono text-xs uppercase text-black mr-2">
+                          Prefers
+                        </span>
+                        <span className="text-black/40">{sem.prefers}</span>
+                      </p>
+                      <p>
+                        <span className="mono text-xs uppercase text-black mr-2">
+                          Avoids
+                        </span>
+                        <span className="text-black/40">{sem.avoids}</span>
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

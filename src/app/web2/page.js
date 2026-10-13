@@ -1,9 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { WEB_FACETS } from "@/lib/webFacets";
-import { emptyDesignTokens } from "@/lib/designTokens";
+import {
+  emptyDesignTokens,
+  applyFacetDefaultsToTokens,
+  preserveTokenSelections,
+} from "@/lib/designTokens";
+import CalibrationBar from "@/components/CalibrationBar";
 import ReferenceDetailTabs from "@/components/ReferenceDetailTabs";
 import ReferenceTokensPanel from "@/components/ReferenceTokensPanel";
 
@@ -12,6 +17,15 @@ const SCORE_OPTIONS = [
   { value: 0, label: "Neutral" },
   { value: 1, label: "Like" },
 ];
+
+function tokenCount(tokens) {
+  return (
+    (tokens?.colors?.length || 0) +
+    (tokens?.typography?.length || 0) +
+    (tokens?.icons?.length || 0) +
+    (tokens?.ctas?.length || 0)
+  );
+}
 
 export default function Web2UploadPage() {
   const router = useRouter();
@@ -22,11 +36,74 @@ export default function Web2UploadPage() {
   const [facets, setFacets] = useState(null);
   const [tokens, setTokens] = useState(emptyDesignTokens());
   const [conceptNote, setConceptNote] = useState("");
+  const [valence, setValence] = useState(0);
   const [tab, setTab] = useState("facets");
   const [analyzing, setAnalyzing] = useState(false);
+  const [pullingTokens, setPullingTokens] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [warning, setWarning] = useState(null);
+  const [calibration, setCalibration] = useState(null);
+
+  useEffect(() => {
+    fetch("/api/web2/profile")
+      .then((r) => r.json())
+      .then((d) => setCalibration(d.calibration || null))
+      .catch(() => {});
+  }, []);
+
+  const pullSeq = useRef(0);
+  const pendingPull = useRef(null);
+  const valenceRef = useRef(0);
+  const tokensRef = useRef(tokens);
+  useEffect(() => {
+    valenceRef.current = valence;
+  }, [valence]);
+  useEffect(() => {
+    tokensRef.current = tokens;
+  }, [tokens]);
+
+  const pullTokensForLiked = useCallback(
+    (pageUrl, nextFacets) => {
+      if (!pageUrl) return Promise.resolve(null);
+      const seq = ++pullSeq.current;
+      setPullingTokens(true);
+      setError(null);
+      const promise = (async () => {
+        try {
+          const res = await fetch("/api/web2/extract-tokens", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: pageUrl }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Token extract failed");
+          // Ignore results from superseded pulls or if the site is no longer liked.
+          if (seq !== pullSeq.current || valenceRef.current !== 1) return null;
+          const next = preserveTokenSelections(
+            tokensRef.current,
+            applyFacetDefaultsToTokens(
+              data.tokens || emptyDesignTokens(),
+              nextFacets || facets || []
+            )
+          );
+          setTokens(next);
+          return next;
+        } catch (err) {
+          if (seq === pullSeq.current) setError(err.message);
+          return null;
+        } finally {
+          if (seq === pullSeq.current) {
+            setPullingTokens(false);
+            pendingPull.current = null;
+          }
+        }
+      })();
+      pendingPull.current = promise;
+      return promise;
+    },
+    [facets]
+  );
 
   async function handleAnalyze(e) {
     e.preventDefault();
@@ -37,6 +114,7 @@ export default function Web2UploadPage() {
     setSourceUrl(null);
     setHostname(null);
     setImagePath(null);
+    setValence(0);
     setTab("facets");
     setError(null);
     setWarning(null);
@@ -51,36 +129,27 @@ export default function Web2UploadPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Analysis failed");
 
+      const nextFacets = WEB_FACETS.map((f) => ({
+        name: f.key,
+        descriptor: data.descriptors?.[f.key] || "",
+        score: 0,
+      }));
+
       setSourceUrl(data.sourceUrl);
       setHostname(data.hostname);
       setImagePath(data.imagePath || null);
-      setTokens(data.tokens || emptyDesignTokens());
-      setFacets(
-        WEB_FACETS.map((f) => ({
-          name: f.key,
-          descriptor: data.descriptors?.[f.key] || "",
-          score: 0,
-        }))
-      );
+      setFacets(nextFacets);
+      setTokens(emptyDesignTokens());
 
       const warnings = [];
       if (!data.descriptors) {
         warnings.push(
-          "Automatic tagging didn't return a result, probably an API key or model issue. Check your .env.local, or just type a short description into each facet below before scoring."
-        );
-      }
-      const tokenCount =
-        (data.tokens?.colors?.length || 0) +
-        (data.tokens?.typography?.length || 0) +
-        (data.tokens?.icons?.length || 0);
-      if (!tokenCount) {
-        warnings.push(
-          "No design tokens were extracted. You can still score facets; open the Tokens tab after saving another site if extraction works there."
+          "Automatic tagging didn't return a result. Check .env.local, or type a short description into each facet below."
         );
       }
       if (!data.imagePath) {
         warnings.push(
-          "Could not capture a screenshot of this page. You can still score it from the URL; try again later if you want a preview."
+          "Could not capture a screenshot. You can still score from the URL."
         );
       }
       if (warnings.length) setWarning(warnings.join(" "));
@@ -92,15 +161,45 @@ export default function Web2UploadPage() {
   }
 
   function updateFacet(index, patch) {
-    setFacets((prev) => prev.map((f, i) => (i === index ? { ...f, ...patch } : f)));
+    setFacets((prev) => {
+      const next = prev.map((f, i) => (i === index ? { ...f, ...patch } : f));
+      if (valence === 1) {
+        setTokens((tok) => applyFacetDefaultsToTokens(tok, next));
+      }
+      return next;
+    });
+  }
+
+  async function handleValence(next) {
+    setValence(next);
+    valenceRef.current = next;
+    if (next === -1) {
+      pullSeq.current += 1;
+      pendingPull.current = null;
+      setPullingTokens(false);
+      setTokens(emptyDesignTokens());
+      if (tab === "tokens") setTab("facets");
+      return;
+    }
+    if (next === 1 && sourceUrl && tokenCount(tokens) === 0 && !pendingPull.current) {
+      await pullTokensForLiked(sourceUrl, facets);
+    }
   }
 
   async function handleSave() {
     if (!sourceUrl || !facets) return;
+    if (valence !== 1 && valence !== -1) {
+      setError("Mark the whole site as Like or Dislike before saving.");
+      return;
+    }
     setSaving(true);
     setError(null);
 
     try {
+      let tokensToSave = tokens;
+      if (valence === 1 && pendingPull.current) {
+        tokensToSave = (await pendingPull.current) || tokens;
+      }
       const res = await fetch("/api/web2/references", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -109,8 +208,13 @@ export default function Web2UploadPage() {
           hostname,
           imagePath,
           facets,
-          tokens,
+          // Only persist token breakdown for liked sites.
+          tokens:
+            valence === 1
+              ? applyFacetDefaultsToTokens(tokensToSave, facets)
+              : emptyDesignTokens(),
           conceptNote,
+          valence,
         }),
       });
       const data = await res.json();
@@ -123,18 +227,26 @@ export default function Web2UploadPage() {
     }
   }
 
+  const tokensEnabled = valence === 1;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-semibold">Add a website reference</h1>
-        <p className="text-sm text-neutral-500 mt-1">
-          Paste a landing-page URL. Claude reads the page HTML and suggests a short
-          description for each facet, and also extracts Colors, Typography, and Icons
-          tokens. A screenshot is saved so you can see the site while scoring. Edit any
-          descriptors, then score whether that facet is part of why you like or dislike
-          the site.
+        <p className="mono text-xs tracking-wide uppercase text-black/50 mb-2">
+          Support set · PseudoClient protocol
+        </p>
+        <h1 className="text-2xl font-medium tracking-tight">Add a website</h1>
+        <p className="text-sm text-black/60 mt-2 max-w-xl leading-relaxed">
+          Paste a homepage URL. Mark Like or Dislike for the whole site, then score
+          facets. Color / type / icon / CTA tokens only break out for{" "}
+          <span className="mono">liked</span> sites. Calibration needs at least{" "}
+          <span className="mono">5 liked</span> and{" "}
+          <span className="mono">5 disliked</span> — add as many as you like
+          beyond that; every reference feeds the profile.
         </p>
       </div>
+
+      {calibration && <CalibrationBar calibration={calibration} />}
 
       <form onSubmit={handleAnalyze} className="flex flex-col sm:flex-row gap-2">
         <input
@@ -143,42 +255,41 @@ export default function Web2UploadPage() {
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://example.com"
           required
-          className="flex-1 border border-neutral-300 rounded px-3 py-2 text-sm"
+          className="flex-1 border border-black px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black"
         />
         <button
           type="submit"
           disabled={analyzing || !url.trim()}
-          className="bg-neutral-900 text-white px-4 py-2 rounded text-sm disabled:opacity-50 shrink-0"
+          className="bg-black text-white px-4 py-2 text-sm disabled:opacity-40 shrink-0"
         >
-          {analyzing ? "Reading page..." : "Analyze"}
+          {analyzing ? "Reading…" : "Analyze"}
         </button>
       </form>
 
-      {error && <p className="text-red-600 text-sm">{error}</p>}
+      {error && <p className="text-sm text-black underline decoration-black/40">{error}</p>}
       {warning && (
-        <p className="text-amber-700 text-sm bg-amber-50 border border-amber-200 rounded px-3 py-2">
+        <p className="text-sm border border-black/20 bg-white px-3 py-2 text-black/70">
           {warning}
         </p>
       )}
 
       {analyzing && (
-        <p className="text-sm text-neutral-500">
-          Fetching landing page, capturing screenshot, tagging facets, and extracting
-          design tokens...
+        <p className="mono text-xs text-black/50">
+          Fetching page · screenshot · facet tags…
         </p>
       )}
 
       {sourceUrl && (
-        <div className="space-y-3">
+        <div className="space-y-3 border border-black/15 p-4">
           {imagePath ? (
             <img
               src={imagePath}
               alt={`Screenshot of ${hostname || sourceUrl}`}
-              className="w-full max-h-[28rem] object-cover object-top rounded border border-neutral-200 bg-neutral-50"
+              className="w-full max-h-[28rem] object-cover object-top border border-black/10 bg-white"
             />
           ) : (
-            <div className="w-full h-40 rounded border border-dashed border-neutral-300 bg-neutral-50 flex items-center justify-center text-sm text-neutral-400">
-              No screenshot available
+            <div className="w-full h-40 border border-dashed border-black/30 flex items-center justify-center text-sm text-black/40">
+              No screenshot
             </div>
           )}
           <div className="text-sm">
@@ -187,29 +298,60 @@ export default function Web2UploadPage() {
               href={sourceUrl}
               target="_blank"
               rel="noreferrer"
-              className="text-neutral-500 hover:text-neutral-800 break-all"
+              className="mono text-xs text-black/50 hover:text-black break-all"
             >
               {sourceUrl}
             </a>
+          </div>
+
+          <div>
+            <div className="mono text-xs uppercase tracking-wide text-black/50 mb-2">
+              Whole-site judgment
+            </div>
+            <div className="flex gap-2">
+              {[
+                { value: 1, label: "Like" },
+                { value: -1, label: "Dislike" },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => handleValence(opt.value)}
+                  className={`px-4 py-2 text-sm border border-black transition-colors disabled:opacity-40 ${
+                    valence === opt.value
+                      ? "bg-black text-white"
+                      : "bg-white text-black hover:bg-black/5"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {pullingTokens && (
+              <p className="mono text-xs text-black/50 mt-2">
+                Pulling tokens for liked site…
+              </p>
+            )}
           </div>
         </div>
       )}
 
       {facets && (
         <div className="space-y-4">
-          <ReferenceDetailTabs active={tab} onChange={setTab} />
+          <ReferenceDetailTabs
+            active={tab}
+            onChange={setTab}
+            tokensEnabled={tokensEnabled}
+          />
 
           {tab === "facets" && (
             <div className="space-y-4">
               {WEB_FACETS.map((f, i) => (
-                <div
-                  key={f.key}
-                  className="border border-neutral-200 rounded p-3 space-y-2 bg-white"
-                >
+                <div key={f.key} className="border border-black/15 p-3 space-y-2 bg-white">
                   <div>
-                    <div className="font-medium text-sm">{f.label}</div>
+                    <div className="text-sm font-medium">{f.label}</div>
                     {f.hint && (
-                      <div className="text-xs text-neutral-400 mt-0.5">{f.hint}</div>
+                      <div className="mono text-xs text-black/40 mt-0.5">{f.hint}</div>
                     )}
                   </div>
                   <input
@@ -217,7 +359,7 @@ export default function Web2UploadPage() {
                     value={facets[i].descriptor}
                     onChange={(e) => updateFacet(i, { descriptor: e.target.value })}
                     placeholder="Descriptor"
-                    className="w-full border border-neutral-300 rounded px-2 py-1 text-sm"
+                    className="w-full border border-black/25 px-2 py-1.5 text-sm focus:outline-none focus:border-black"
                   />
                   <div className="flex gap-2">
                     {SCORE_OPTIONS.map((opt) => (
@@ -225,10 +367,10 @@ export default function Web2UploadPage() {
                         key={opt.value}
                         type="button"
                         onClick={() => updateFacet(i, { score: opt.value })}
-                        className={`px-3 py-1 rounded text-sm border transition-colors ${
+                        className={`px-3 py-1 text-sm border border-black transition-colors ${
                           facets[i].score === opt.value
-                            ? "bg-neutral-900 text-white border-neutral-900"
-                            : "bg-white border-neutral-300 hover:border-neutral-500"
+                            ? "bg-black text-white"
+                            : "bg-white hover:bg-black/5"
                         }`}
                       >
                         {opt.label}
@@ -240,27 +382,41 @@ export default function Web2UploadPage() {
 
               <div>
                 <label className="text-sm font-medium block mb-1">
-                  Anything else driving your reaction to this site? (optional)
+                  Anything else? (optional)
                 </label>
                 <textarea
                   value={conceptNote}
                   onChange={(e) => setConceptNote(e.target.value)}
                   rows={2}
-                  className="w-full border border-neutral-300 rounded px-2 py-1 text-sm"
+                  className="w-full border border-black/25 px-2 py-1.5 text-sm focus:outline-none focus:border-black"
                 />
               </div>
             </div>
           )}
 
-          {tab === "tokens" && <ReferenceTokensPanel tokens={tokens} />}
+          {tab === "tokens" && tokensEnabled && (
+            <ReferenceTokensPanel
+              tokens={tokens}
+              facets={facets}
+              onChange={setTokens}
+              onRefresh={() => pullTokensForLiked(sourceUrl, facets)}
+              refreshing={pullingTokens}
+              autoRefresh
+              refreshKey={sourceUrl}
+            />
+          )}
 
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving}
-            className="bg-neutral-900 text-white px-4 py-2 rounded text-sm disabled:opacity-50"
+            disabled={saving || (valence !== 1 && valence !== -1)}
+            className="bg-black text-white px-4 py-2 text-sm disabled:opacity-40"
           >
-            {saving ? "Saving..." : "Save reference"}
+            {saving
+              ? pullingTokens
+                ? "Saving… finishing tokens"
+                : "Saving…"
+              : "Save to support set"}
           </button>
         </div>
       )}

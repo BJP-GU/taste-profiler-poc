@@ -9,7 +9,8 @@ export async function GET() {
 
 export async function POST(request) {
   const body = await request.json();
-  const { sourceUrl, hostname, imagePath, facets, tokens, conceptNote } = body;
+  const { sourceUrl, hostname, imagePath, facets, tokens, conceptNote, valence } =
+    body;
 
   if (
     !sourceUrl ||
@@ -19,6 +20,13 @@ export async function POST(request) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
+  if (valence !== 1 && valence !== -1) {
+    return NextResponse.json(
+      { error: "Mark the site as Like or Dislike before saving." },
+      { status: 400 }
+    );
+  }
+
   const record = createWeb2Reference({
     sourceUrl,
     hostname,
@@ -26,6 +34,7 @@ export async function POST(request) {
     facets,
     tokens: tokens || emptyDesignTokens(),
     conceptNote,
+    valence,
   });
   return NextResponse.json(record);
 }

@@ -6,34 +6,39 @@ import { usePathname, useRouter } from "next/navigation";
 
 const PROFILERS = [
   {
-    id: "graphic-design",
-    label: "Graphic Design Taste Profiler",
-    href: "/",
-    match: (pathname) =>
-      !(
-        pathname === "/web" ||
-        pathname.startsWith("/web/") ||
-        pathname.startsWith("/web2")
-      ),
+    id: "web-design-2",
+    label: "Semantic Taste Profiler",
+    href: "/web2",
+    match: (pathname) => pathname.startsWith("/web2"),
   },
   {
     id: "web-design",
     label: "Web design taste profiler",
     href: "/web",
-    // Avoid matching /web2 — path must be /web or under /web/
     match: (pathname) => pathname === "/web" || pathname.startsWith("/web/"),
   },
   {
-    id: "web-design-2",
-    label: "Web design taste profiler 2.0",
-    href: "/web2",
-    match: (pathname) => pathname.startsWith("/web2"),
+    id: "graphic-design",
+    label: "Graphic Design Taste Profiler",
+    href: "/graphic",
+    match: (pathname) =>
+      pathname === "/graphic" ||
+      pathname.startsWith("/graphic/") ||
+      pathname.startsWith("/catalog") ||
+      pathname.startsWith("/profile"),
   },
 ];
 
 function NavLink({ href, active, children }) {
   return (
-    <Link href={href} className={active ? "text-neutral-900" : "hover:text-neutral-900"}>
+    <Link
+      href={href}
+      className={
+        active
+          ? "text-black underline underline-offset-4"
+          : "text-black/50 hover:text-black"
+      }
+    >
       {children}
     </Link>
   );
@@ -70,7 +75,7 @@ export default function Nav() {
   }
 
   return (
-    <header className="relative z-20 border-b border-neutral-200 bg-white">
+    <header className="relative z-20 border-b border-black bg-white">
       <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-6">
         <div className="relative" ref={menuRef}>
           <button
@@ -78,10 +83,10 @@ export default function Nav() {
             aria-haspopup="listbox"
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
-            className="font-semibold text-left hover:text-neutral-600 transition-colors"
+            className="font-medium text-left hover:opacity-70 transition-opacity"
           >
             {active.label}
-            <span className="ml-1.5 text-neutral-400 text-xs align-middle" aria-hidden>
+            <span className="ml-1.5 mono text-xs text-black/40 align-middle" aria-hidden>
               ▾
             </span>
           </button>
@@ -90,7 +95,7 @@ export default function Nav() {
             <ul
               role="listbox"
               aria-label="Taste profilers"
-              className="absolute left-0 top-full z-20 mt-1 min-w-[16rem] border border-neutral-200 bg-white py-1 shadow-sm"
+              className="absolute left-0 top-full z-20 mt-1 min-w-[16rem] border border-black bg-white py-1"
             >
               {PROFILERS.map((profiler) => {
                 const selected = profiler.id === active.id;
@@ -99,8 +104,8 @@ export default function Nav() {
                     <button
                       type="button"
                       onClick={() => selectProfiler(profiler)}
-                      className={`w-full px-3 py-2 text-left text-sm hover:bg-neutral-50 ${
-                        selected ? "font-medium text-neutral-900" : "text-neutral-600"
+                      className={`w-full px-3 py-2 text-left text-sm hover:bg-black/5 ${
+                        selected ? "font-medium text-black" : "text-black/60"
                       }`}
                     >
                       {profiler.label}
@@ -113,8 +118,8 @@ export default function Nav() {
         </div>
 
         {isGraphic ? (
-          <nav className="flex gap-4 text-sm text-neutral-600">
-            <NavLink href="/" active={pathname === "/"}>
+          <nav className="flex gap-4 text-sm">
+            <NavLink href="/graphic" active={pathname === "/graphic"}>
               Upload &amp; Score
             </NavLink>
             <NavLink href="/catalog" active={pathname.startsWith("/catalog")}>
@@ -125,19 +130,22 @@ export default function Nav() {
             </NavLink>
           </nav>
         ) : isWeb2 ? (
-          <nav className="flex gap-4 text-sm text-neutral-600">
+          <nav className="flex gap-4 text-sm">
             <NavLink href="/web2" active={pathname === "/web2"}>
-              Add &amp; Score
+              Add
             </NavLink>
             <NavLink href="/web2/catalog" active={pathname.startsWith("/web2/catalog")}>
               Catalog
             </NavLink>
             <NavLink href="/web2/profile" active={pathname.startsWith("/web2/profile")}>
-              Taste Profile
+              Profile
+            </NavLink>
+            <NavLink href="/web2/gallery" active={pathname.startsWith("/web2/gallery")}>
+              Token Gallery
             </NavLink>
           </nav>
         ) : (
-          <nav className="flex gap-4 text-sm text-neutral-600">
+          <nav className="flex gap-4 text-sm">
             <NavLink href="/web" active={pathname === "/web"}>
               Add &amp; Score
             </NavLink>

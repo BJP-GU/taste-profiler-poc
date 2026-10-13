@@ -42,6 +42,7 @@ export function createWeb2Reference({
   facets,
   tokens,
   conceptNote,
+  valence,
 }) {
   const items = readAll();
   const record = {
@@ -52,6 +53,8 @@ export function createWeb2Reference({
     facets,
     tokens: normalizeDesignTokens(tokens || emptyDesignTokens()),
     conceptNote: conceptNote || "",
+    // Whole-site like (+1) / dislike (−1), per PseudoClient support sets.
+    valence: valence === 1 || valence === -1 ? valence : 0,
     createdAt: new Date().toISOString(),
   };
   items.push(record);
@@ -59,10 +62,19 @@ export function createWeb2Reference({
   return record;
 }
 
-export function updateWeb2Reference(id, { facets, conceptNote, tokens }) {
+export function updateWeb2Reference(
+  id,
+  { facets, conceptNote, tokens, valence, imagePath, sourceUrl, hostname }
+) {
   const items = readAll();
   const idx = items.findIndex((r) => r.id === id);
   if (idx === -1) return null;
+  const nextValence =
+    valence === 1 || valence === -1
+      ? valence
+      : valence === 0
+        ? 0
+        : items[idx].valence;
   items[idx] = {
     ...items[idx],
     facets: facets || items[idx].facets,
@@ -71,6 +83,10 @@ export function updateWeb2Reference(id, { facets, conceptNote, tokens }) {
       tokens !== undefined
         ? normalizeDesignTokens(tokens)
         : items[idx].tokens || emptyDesignTokens(),
+    valence: nextValence !== undefined ? nextValence : items[idx].valence ?? 0,
+    ...(imagePath !== undefined ? { imagePath } : {}),
+    ...(sourceUrl !== undefined ? { sourceUrl } : {}),
+    ...(hostname !== undefined ? { hostname } : {}),
   };
   writeAll(items);
   return items[idx];

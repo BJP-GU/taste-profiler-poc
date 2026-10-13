@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
-import { fetchLandingPage } from "@/lib/fetchLandingPage";
+import {
+  fetchLandingPage,
+  homepageUrl,
+} from "@/lib/fetchLandingPage";
 import { tagWebFacets } from "@/lib/webClaude";
-import { extractDesignTokens } from "@/lib/web2Claude";
 import { captureWebsiteScreenshot } from "@/lib/captureScreenshot";
 import { emptyDesignTokens } from "@/lib/designTokens";
 
+/**
+ * Analyze a URL for facets + screenshot.
+ * Token breakdown is NOT run here — only pulled for liked sites
+ * via /api/web2/extract-tokens or refresh-tokens.
+ */
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -21,10 +28,8 @@ export async function POST(request) {
       return NextResponse.json({ error: e.message || "Fetch failed" }, { status: 400 });
     }
 
-    // Facet tagging, design-token extraction, and screenshot in parallel.
-    const [tagResult, tokenResult, shotResult] = await Promise.allSettled([
+    const [tagResult, shotResult] = await Promise.allSettled([
       tagWebFacets(page.html, page.url),
-      extractDesignTokens(page.html, page.url),
       captureWebsiteScreenshot(page.url),
     ]);
 
@@ -33,13 +38,6 @@ export async function POST(request) {
       descriptors = tagResult.value;
     } else {
       console.error("Web2 facet tagging failed:", tagResult.reason?.message);
-    }
-
-    let tokens = emptyDesignTokens();
-    if (tokenResult.status === "fulfilled") {
-      tokens = tokenResult.value;
-    } else {
-      console.error("Web2 token extraction failed:", tokenResult.reason?.message);
     }
 
     let imagePath = null;
@@ -54,7 +52,8 @@ export async function POST(request) {
       hostname: page.hostname,
       imagePath,
       descriptors,
-      tokens,
+      tokens: emptyDesignTokens(),
+      tokensFrom: homepageUrl(rawUrl),
     });
   } catch (err) {
     console.error(err);

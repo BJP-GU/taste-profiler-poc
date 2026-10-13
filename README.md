@@ -1,80 +1,94 @@
-# Taste Profiler
+# Taste Profiler (POC)
 
-A minimal, single-user prototype for testing whether a designer's visual
-taste can be usefully represented as a set of scored facets across a small
-catalog of graphic design references (posters). Built as a proof-of-concept,
-not a production app: no auth, no multi-user support, local storage only.
+A proof-of-concept for capturing a designer's personal taste from a small set of
+liked and disliked references, then turning it into a plain-language profile an AI
+design tool could follow.
+
+![Catalog of liked and disliked website references with calibration progress](docs/catalog.png)
+
+## Credit
+
+This project is based on **PseudoClient**, from:
+
+> David Chuan-En Lin and Nikolas Martelaro. 2021. *Learning Personal Style from Few
+> Examples.* In Designing Interactive Systems Conference 2021 (DIS '21).
+> [doi:10.1145/3461778.3462115](https://doi.org/10.1145/3461778.3462115)
+
+The paper shows that a model can learn someone's personal style from a handful of
+positive and negative examples (5 liked + 5 disliked reached 79.4% accuracy in their
+graphic-design experiments), learning by **juxtaposing** what appears in liked
+examples against what appears in disliked ones. This project borrows that protocol but
+points it at the **designer's own** taste rather than a client's, and produces a
+semantic (written) profile instead of retrieving similar images.
+
+## The three explorations
+
+All three live in the same app; switch between them with the dropdown in the top nav.
+
+### 1. Graphic Design Taste Profiler (`/graphic`)
+
+Upload poster images. Claude (vision) writes a short, neutral descriptor for six
+facets: color, typography, composition & layout, imagery & illustration style, form &
+shape language, and texture & materiality. You edit the descriptors and score each
+facet **Like / Neutral / Dislike** (+1 / 0 / −1).
+
+### 2. Web Design Taste Profiler (`/web`)
+
+The same idea applied to websites. Paste a URL; the app screenshots the landing page,
+reads its HTML, and Claude describes seven web facets: hero composition, typography,
+color, layout/grid, imagery style, motion/interaction, and CTA design. You score each
+facet +1 / 0 / −1. A **Playground** then uses the resulting profile to generate
+wireframes and UI token components that follow your taste.
+
+### 3. Semantic Taste Profiler (`/web2`, the default)
+
+A closer adaptation of the PseudoClient protocol. Instead of scoring every facet, you
+mark each **whole site** as Liked or Disliked, building a support set. The catalog
+tracks calibration toward the paper's 5 liked + 5 disliked minimum. Each reference also
+gets an extracted design-token inventory (colors, type styles, icons, and CTAs with
+hover/active/focus states captured from the live page), browsable in the **Token
+Gallery**.
+
+## How the taste profile is computed
+
+**Explorations 1 and 2 (per-facet averaging).** Once at least 5 references exist, each
+facet's scores are averaged across the catalog (a value from −1 to 1), and the
+descriptors from references scored +1 and −1 on that facet are collected into liked and
+disliked lists. Claude turns this into a 3–5 sentence profile, translating averages into
+confidence and quoting concrete descriptor language rather than numbers.
+
+**Exploration 3 (contrastive / juxtaposition).** Once the support set has 5 liked and 5
+disliked sites:
+
+1. Sites are split by whole-site valence into liked and disliked sets.
+2. For each facet, descriptors from liked sites and from disliked sites are tokenized
+   and word frequencies are counted per side.
+3. A word becomes a **preferred signal** when it appears at least 2 more times in liked
+   sites than in disliked ones (or appears 2+ times in liked and never in disliked);
+   **avoided signals** are the mirror image.
+4. Each facet gets an evidence strength based on how many descriptors back it, relative
+   to the 10-example target.
+5. This contrastive evidence is sent to Claude once, which writes a summary plus a
+   per-facet *prefers / avoids* statement with a low/medium/high confidence.
+
+In all three, the written profile is cached and only regenerated when the set of
+references changes.
 
 ## Setup
 
-Requires Node 18+.
+Requires Node 18+ and an Anthropic API key.
 
 ```
 npm install
+npx playwright install chromium
 cp .env.example .env.local
 ```
 
-Open `.env.local` and set `ANTHROPIC_API_KEY` to your own Anthropic API key.
-`ANTHROPIC_MODEL` defaults to a vision-capable Claude model; if that model
-ID has since been deprecated, swap in a current one from
-https://docs.claude.com/en/docs/about-claude/models.
+Set `ANTHROPIC_API_KEY` in `.env.local` to a secret key that starts with `sk-ant-`.
 
 ```
 npm run dev
 ```
 
-Open http://localhost:3000.
-
-## How it works
-
-**Upload & Score** (`/`) — upload a poster image. Claude's vision model
-looks at it once and suggests a short, neutral description for each of six
-facets (it describes what it sees, it doesn't tell you whether to like it).
-Edit any of those descriptions if they're off, then score each facet
-Dislike / Neutral / Like based on whether it's part of why you react to the
-piece the way you do. Save.
-
-**Catalog** (`/catalog`) — a grid of everything you've scored, with a
-colored dot per facet (green = liked, red = disliked, gray = neutral) so you
-can scan your catalog at a glance. Click any item to edit its scores.
-
-**Taste Profile** (`/profile`) — once you've scored at least 5 references,
-this computes your average score per facet and sends the aggregated data
-(averages plus the specific descriptors tied to your liked and disliked
-scores) to Claude, asking it to write a short plain-language summary of your
-taste, e.g. "the designer favors serif display type and broken grids, and
-tends to avoid flat, glossy textures." The bars below the summary show the
-underlying per-facet averages so the prose claim has numeric grounding next
-to it, not just a black-box assertion.
-
-## The six facets
-
-Color, Typography, Composition & Layout, Imagery & Illustration Style,
-Form & Shape Language, Texture & Materiality. Defined in
-`src/lib/facets.js` if you want to add, remove, or rename any.
-
-There's also a free-text "anything else driving your reaction" field per
-reference for whatever doesn't fit a facet (concept, wordplay, a specific
-detail), since not everything that drives a reaction to a piece of design
-is a formal quality that reduces cleanly to a score.
-
-## Data
-
-Everything is stored in `data/references.json`, a flat file, on purpose.
-It's plain-text and inspectable rather than a real database, since this is
-a single-user prototype meant to be poked at directly if you want to see
-exactly what's been recorded. Uploaded images live in `public/uploads`.
-Neither directory is meant to be committed to git (see `.gitignore`).
-
-## Known limitations (by design, for a v0)
-
-- Scoring happens at the whole-reference level, not the element level. If
-  a poster's typography drew you in but its color didn't, you can say so,
-  but you can't yet point at the specific line of type versus the specific
-  swatch. That's the natural next version.
-- The taste profile page requires 5+ scored references before it will call
-  the synthesis API, to avoid drawing conclusions from too little data.
-- With very few references, or references that are all similar, the
-  written profile summary may end up thin or repetitive. That's expected:
-  it's reporting on the data it's given, not filling gaps with invented
-  detail.
+Open http://localhost:3000; it redirects to `/web2`. Data is stored locally as JSON
+files in `data/` (gitignored), so each install starts with an empty catalog.

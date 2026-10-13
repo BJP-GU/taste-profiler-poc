@@ -36,6 +36,12 @@ export function hostnameFromUrl(url) {
   }
 }
 
+/** Site homepage (origin + /) — design tokens are always pulled from here. */
+export function homepageUrl(raw) {
+  const url = new URL(normalizeUrl(raw));
+  return `${url.origin}/`;
+}
+
 function cleanHtml(html) {
   let out = html;
 
@@ -97,6 +103,7 @@ export async function fetchLandingPage(rawUrl) {
     return {
       url: res.url || url,
       hostname: hostnameFromUrl(res.url || url),
+      rawHtml: html,
       html: cleanHtml(html),
     };
   } catch (err) {

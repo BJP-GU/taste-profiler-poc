@@ -3,29 +3,37 @@ export const WEB_FACETS = [
   {
     key: "hero_composition",
     label: "Hero composition",
-    hint: "Headline-to-visual ratio, above-the-fold hierarchy",
+    hint: "Above-the-fold structure: headline vs visual balance, alignment, stacking, density",
   },
-  { key: "typography", label: "Typography", hint: null },
-  { key: "color", label: "Color", hint: null },
+  {
+    key: "typography",
+    label: "Typography",
+    hint: "Font families/weights if named, scale contrast, tracking, case, serif vs sans",
+  },
+  {
+    key: "color",
+    label: "Color",
+    hint: "Palette roles, hex/rgb if present, contrast, accent vs neutrals, light/dark ground",
+  },
   {
     key: "layout_grid",
     label: "Layout / grid",
-    hint: "Section rhythm, whitespace, scroll pacing",
+    hint: "Columns, container width, section rhythm, whitespace, sticky/fixed chrome",
   },
   {
     key: "imagery_style",
     label: "Imagery style",
-    hint: "Photography vs. illustration vs. 3D/abstract",
+    hint: "Photo vs illustration vs 3D vs abstract; crop, treatment, decorative vs product",
   },
   {
     key: "motion_interaction",
     label: "Motion / interaction",
-    hint: "Scroll animation, hover states, restraint vs. heavy motion",
+    hint: "Libraries, transitions, scroll/hover cues, marquee, carousel; or explicit stillness",
   },
   {
     key: "cta_design",
     label: "CTA design",
-    hint: "Button style, placement, visual weight",
+    hint: "Button shape/fill/outline, label tone, placement, primary vs secondary hierarchy",
   },
 ];
 
